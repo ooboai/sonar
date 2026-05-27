@@ -140,10 +140,18 @@ impl SonarIndex {
     /// Try loading a cached index; rebuild (and save) if stale or missing.
     /// Uses v2 persist format which stores embedding vectors for hybrid roundtrip.
     pub fn from_path_cached(path: &Path) -> Result<Self, String> {
+        Self::from_path_cached_with_content(path, &[ContentType::Code])
+    }
+
+    /// Try loading a cached index with content type filter.
+    pub fn from_path_cached_with_content(
+        path: &Path,
+        content_types: &[ContentType],
+    ) -> Result<Self, String> {
         if let Some(index) = crate::persist::load_cached(path)? {
             return Ok(index);
         }
-        crate::persist::build_and_save(path)
+        crate::persist::build_and_save_content(path, content_types)
     }
 
     /// Clone a remote git repository and index it.
@@ -241,6 +249,15 @@ impl SonarIndex {
     /// If `Hybrid` or `Semantic` is requested but the model can't load,
     /// falls back to `Bm25` and logs a warning.
     pub fn from_path_with_mode(path: &Path, requested_mode: Mode) -> Result<Self, String> {
+        Self::from_path_with_mode_and_content(path, requested_mode, &[ContentType::Code])
+    }
+
+    /// Walk `path` and build an index with the requested mode and content types.
+    pub fn from_path_with_mode_and_content(
+        path: &Path,
+        requested_mode: Mode,
+        content_types: &[ContentType],
+    ) -> Result<Self, String> {
         if !path.exists() {
             return Err(format!("Path does not exist: {}", path.display()));
         }
@@ -248,7 +265,7 @@ impl SonarIndex {
             return Err(format!("Path is not a directory: {}", path.display()));
         }
 
-        let walked = walk_directory(path, &[ContentType::Code]);
+        let walked = walk_directory(path, content_types);
         if walked.is_empty() {
             return Err(format!("No supported files found under {}", path.display()));
         }

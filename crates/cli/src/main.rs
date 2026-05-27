@@ -30,12 +30,42 @@ impl From<ModeArg> for sonar_core::index::Mode {
     }
 }
 
+#[derive(Clone, Copy, ValueEnum, Debug, PartialEq)]
+enum ContentArg {
+    Code,
+    Docs,
+    Config,
+    All,
+}
+
+fn resolve_content_types(content: &[ContentArg]) -> Vec<sonar_core::types::ContentType> {
+    use sonar_core::types::ContentType;
+    if content.is_empty() || content.contains(&ContentArg::All) {
+        return vec![ContentType::Code, ContentType::Docs, ContentType::Config];
+    }
+    let mut types = Vec::new();
+    for c in content {
+        match c {
+            ContentArg::Code => types.push(ContentType::Code),
+            ContentArg::Docs => types.push(ContentType::Docs),
+            ContentArg::Config => types.push(ContentType::Config),
+            ContentArg::All => unreachable!(),
+        }
+    }
+    types.dedup();
+    types
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Index a directory for searching.
     Index {
         /// Path to the directory to index.
         path: String,
+
+        /// Content types to index: code, docs, config, or all.
+        #[arg(long, value_enum, default_values_t = vec![ContentArg::Code])]
+        content: Vec<ContentArg>,
     },
     /// Search an indexed codebase.
     Search {
@@ -57,6 +87,10 @@ enum Commands {
         /// Search mode: hybrid, semantic, or bm25.
         #[arg(short, long, value_enum, default_value = "hybrid")]
         mode: ModeArg,
+
+        /// Content types to search: code, docs, config, or all.
+        #[arg(long, value_enum, default_values_t = vec![ContentArg::Code])]
+        content: Vec<ContentArg>,
     },
     /// Download the embedding model from HuggingFace Hub.
     DownloadModel {
@@ -104,11 +138,12 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Index { path } => {
+        Commands::Index { path, content } => {
+            let content_types = resolve_content_types(&content);
             let path = Path::new(&path);
             eprintln!("Indexing {}...", path.display());
-            let index =
-                sonar_core::persist::build_and_save(path).map_err(|e| anyhow::anyhow!(e))?;
+            let index = sonar_core::persist::build_and_save_content(path, &content_types)
+                .map_err(|e| anyhow::anyhow!(e))?;
             let cache_dir = sonar_core::persist::default_cache_dir(path)
                 .map_err(|e| anyhow::anyhow!(e))?;
             let stats = index.stats();
@@ -130,14 +165,19 @@ fn main() -> anyhow::Result<()> {
             git_ref,
             top_k,
             mode,
+            content,
         } => {
+            let content_types = resolve_content_types(&content);
             let mut index = if sonar_core::utils::is_git_url(&path) {
                 eprintln!("Cloning {}...", path);
                 sonar_core::index::SonarIndex::from_git(&path, git_ref.as_deref(), &[])
                     .map_err(|e| anyhow::anyhow!(e))?
             } else {
-                sonar_core::index::SonarIndex::from_path_cached(Path::new(&path))
-                    .map_err(|e| anyhow::anyhow!(e))?
+                sonar_core::index::SonarIndex::from_path_cached_with_content(
+                    Path::new(&path),
+                    &content_types,
+                )
+                .map_err(|e| anyhow::anyhow!(e))?
             };
             let requested: sonar_core::index::Mode = mode.into();
             index.set_mode(requested);

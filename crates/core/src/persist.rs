@@ -386,10 +386,27 @@ pub fn build_and_save(root: &Path) -> Result<SonarIndex, String> {
     build_and_save_with(root, None)
 }
 
+/// Build a fresh index from `root` with specific content types.
+pub fn build_and_save_content(
+    root: &Path,
+    content_types: &[crate::types::ContentType],
+) -> Result<SonarIndex, String> {
+    build_and_save_content_with(root, content_types, None)
+}
+
 /// Like `build_and_save` but accepts an override base directory for the cache
 /// (used by tests).
 pub fn build_and_save_with(
     root: &Path,
+    cache_base_override: Option<&Path>,
+) -> Result<SonarIndex, String> {
+    build_and_save_content_with(root, &[crate::types::ContentType::Code], cache_base_override)
+}
+
+/// Build and save with content type filter and optional cache base override.
+pub fn build_and_save_content_with(
+    root: &Path,
+    content_types: &[crate::types::ContentType],
     cache_base_override: Option<&Path>,
 ) -> Result<SonarIndex, String> {
     if !root.exists() {
@@ -399,8 +416,7 @@ pub fn build_and_save_with(
         return Err(format!("Path is not a directory: {}", root.display()));
     }
 
-    let content_types = [crate::types::ContentType::Code];
-    let walked = walk_directory(root, &content_types);
+    let walked = walk_directory(root, content_types);
     if walked.is_empty() {
         return Err(format!("No supported files found under {}", root.display()));
     }
