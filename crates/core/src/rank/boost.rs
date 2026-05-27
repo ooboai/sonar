@@ -232,10 +232,10 @@ fn chunk_defines_symbol(chunk: &Chunk, symbol_name: &str) -> bool {
     }
     // SQL regex is case-insensitive — mirror that for the captured name.
     for caps in SQL_DEFINITION_RE.captures_iter(&chunk.content) {
-        if let Some(m) = caps.get(1) {
-            if m.as_str().eq_ignore_ascii_case(symbol_name) {
-                return true;
-            }
+        if let Some(m) = caps.get(1)
+            && m.as_str().eq_ignore_ascii_case(symbol_name)
+        {
+            return true;
         }
     }
     false

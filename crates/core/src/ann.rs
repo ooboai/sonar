@@ -45,15 +45,24 @@ impl Flat {
     /// Return the k highest cosine-similarity vectors to q, descending.
     /// Ties broken by ascending index for determinism.
     pub fn query(&self, q: &[f32], k: usize) -> Vec<Hit> {
+        self.query_masked(q, k, None)
+    }
+
+    /// Return the k highest cosine-similarity vectors to q, descending,
+    /// restricted to indices where `mask[i] == true` (if a mask is provided).
+    pub fn query_masked(&self, q: &[f32], k: usize, mask: Option<&[bool]>) -> Vec<Hit> {
         if self.vecs.is_empty() || q.len() != self.dim {
             return Vec::new();
         }
 
-        if k == 0 || k >= self.vecs.len() {
-            let mut hits: Vec<Hit> = self
-                .vecs
-                .iter()
-                .enumerate()
+        let candidates = self
+            .vecs
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| mask.is_none_or(|m| m.get(*i).copied().unwrap_or(false)));
+
+        if k == 0 {
+            let mut hits: Vec<Hit> = candidates
                 .map(|(i, v)| Hit {
                     index: i,
                     score: dot(v, q),
@@ -67,6 +76,9 @@ impl Flat {
         let mut heap: BinaryHeap<MinHeapEntry> = BinaryHeap::new();
 
         for (i, v) in self.vecs.iter().enumerate() {
+            if !mask.is_none_or(|m| m.get(i).copied().unwrap_or(false)) {
+                continue;
+            }
             let score = dot(v, q);
             if heap.len() < k {
                 heap.push(MinHeapEntry { index: i, score });

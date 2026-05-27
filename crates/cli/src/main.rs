@@ -1,6 +1,8 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -40,9 +42,13 @@ enum Commands {
         /// Natural language or code query.
         query: String,
 
-        /// Path to the indexed directory.
+        /// Path to directory or git URL (https/http) to search.
         #[arg(short, long, default_value = ".")]
         path: String,
+
+        /// Branch or tag to clone (only used with git URLs).
+        #[arg(long, name = "ref")]
+        git_ref: Option<String>,
 
         /// Number of results to return.
         #[arg(short = 'k', long, default_value = "5")]
@@ -63,6 +69,33 @@ enum Commands {
         /// Path to the directory to watch.
         path: String,
     },
+    /// Show token savings from sonar usage.
+    Savings {
+        /// Show breakdown by call type.
+        #[arg(long)]
+        verbose: bool,
+    },
+    /// Generate agent config for an AI coding tool.
+    Init {
+        /// Agent type: claude, cursor, copilot, gemini, kiro, opencode.
+        #[arg(long, short, default_value = "claude")]
+        agent: String,
+        /// Overwrite existing file.
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+fn format_number(n: usize) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result.chars().rev().collect()
 }
 
 fn main() -> anyhow::Result<()> {
@@ -76,7 +109,8 @@ fn main() -> anyhow::Result<()> {
             eprintln!("Indexing {}...", path.display());
             let index =
                 sonar_core::persist::build_and_save(path).map_err(|e| anyhow::anyhow!(e))?;
-            let cache_path = sonar_core::persist::default_cache_path(path);
+            let cache_dir = sonar_core::persist::default_cache_dir(path)
+                .map_err(|e| anyhow::anyhow!(e))?;
             let stats = index.stats();
             eprintln!(
                 "Done. {} files, {} chunks, {} languages.",
@@ -84,7 +118,7 @@ fn main() -> anyhow::Result<()> {
                 stats.total_chunks,
                 stats.languages.len()
             );
-            eprintln!("Index saved to {}", cache_path.display());
+            eprintln!("Index saved to {}", cache_dir.display());
             for (lang, count) in &stats.languages {
                 eprintln!("  {lang}: {count} chunks");
             }
@@ -93,12 +127,18 @@ fn main() -> anyhow::Result<()> {
         Commands::Search {
             query,
             path,
+            git_ref,
             top_k,
             mode,
         } => {
-            let path = Path::new(&path);
-            let mut index = sonar_core::index::SonarIndex::from_path_cached(path)
-                .map_err(|e| anyhow::anyhow!(e))?;
+            let mut index = if sonar_core::utils::is_git_url(&path) {
+                eprintln!("Cloning {}...", path);
+                sonar_core::index::SonarIndex::from_git(&path, git_ref.as_deref(), &[])
+                    .map_err(|e| anyhow::anyhow!(e))?
+            } else {
+                sonar_core::index::SonarIndex::from_path_cached(Path::new(&path))
+                    .map_err(|e| anyhow::anyhow!(e))?
+            };
             let requested: sonar_core::index::Mode = mode.into();
             index.set_mode(requested);
             eprintln!("Search mode: {}", index.mode());
@@ -109,10 +149,7 @@ fn main() -> anyhow::Result<()> {
         Commands::DownloadModel { model } => {
             eprintln!("Downloading model '{model}' from HuggingFace Hub...");
             let embedder = sonar_core::embed::Embedder::from_pretrained(&model)?;
-            eprintln!(
-                "Model ready. Embedding dimension: {}",
-                embedder.dim()
-            );
+            eprintln!("Model ready. Embedding dimension: {}", embedder.dim());
         }
         Commands::Watch { path } => {
             let path = PathBuf::from(&path);
@@ -154,6 +191,99 @@ fn main() -> anyhow::Result<()> {
             }
 
             eprintln!("\nStopped watching.");
+        }
+        Commands::Savings { verbose } => {
+            let records = sonar_core::stats::read_usage().map_err(|e| anyhow::anyhow!(e))?;
+
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64();
+
+            let today_start = now - 86400.0;
+            let week_start = now - 7.0 * 86400.0;
+
+            let today = sonar_core::stats::calculate_savings(&records, Some(today_start));
+            let week = sonar_core::stats::calculate_savings(&records, Some(week_start));
+            let all_time = sonar_core::stats::calculate_savings(&records, None);
+
+            println!("Token savings (estimated):");
+            println!(
+                "  Today:        {:>6} tokens saved ({} calls)",
+                format_number(today.saved_tokens),
+                today.calls
+            );
+            println!(
+                "  Last 7 days:  {:>6} tokens saved ({} calls)",
+                format_number(week.saved_tokens),
+                week.calls
+            );
+            println!(
+                "  All time:     {:>6} tokens saved ({} calls)",
+                format_number(all_time.saved_tokens),
+                all_time.calls
+            );
+
+            if verbose {
+                println!("\nBreakdown by call type:");
+                let search_records: Vec<_> = records
+                    .iter()
+                    .filter(|r| r.call == "search")
+                    .cloned()
+                    .collect();
+                let related_records: Vec<_> = records
+                    .iter()
+                    .filter(|r| r.call == "find_related")
+                    .cloned()
+                    .collect();
+
+                let search_savings = sonar_core::stats::calculate_savings(&search_records, None);
+                let related_savings = sonar_core::stats::calculate_savings(&related_records, None);
+
+                println!(
+                    "  search:        {:>6} tokens saved ({} calls)",
+                    format_number(search_savings.saved_tokens),
+                    search_savings.calls
+                );
+                println!(
+                    "  find_related:  {:>6} tokens saved ({} calls)",
+                    format_number(related_savings.saved_tokens),
+                    related_savings.calls
+                );
+            }
+        }
+        Commands::Init { agent, force } => {
+            let agent_path = match agent.as_str() {
+                "claude" => ".claude/agents/sonar-search.md",
+                "copilot" => ".github/agents/sonar-search.md",
+                "cursor" => ".cursor/agents/sonar-search.md",
+                "gemini" => ".gemini/agents/sonar-search.md",
+                "kiro" => ".kiro/agents/sonar-search.md",
+                "opencode" => ".opencode/agents/sonar-search.md",
+                other => {
+                    anyhow::bail!(
+                        "Unknown agent '{}'. Supported: claude, cursor, copilot, gemini, kiro, opencode",
+                        other
+                    );
+                }
+            };
+
+            let path = PathBuf::from(agent_path);
+            if path.exists() && !force {
+                eprintln!(
+                    "Error: {} already exists. Use --force to overwrite.",
+                    path.display()
+                );
+                std::process::exit(1);
+            }
+
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+
+            static AGENT_TEMPLATE: &str = include_str!("../agents/sonar-search.md");
+            fs::write(&path, AGENT_TEMPLATE)?;
+            println!("Created {}", path.display());
         }
     }
 

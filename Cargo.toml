@@ -39,7 +39,8 @@ clap = { version = "4", features = ["derive"] }
 blake3 = "1"
 
 # Utilities
-walkdir = "2"
+dirs = "6"
+ignore = "0.4"
 regex = "1"
 anyhow = "1"
 tracing = "0.1"

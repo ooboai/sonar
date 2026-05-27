@@ -18,11 +18,10 @@ ordered-float.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 blake3.workspace = true
-walkdir.workspace = true
+ignore.workspace = true
 regex.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 notify.workspace = true
-
-[dev-dependencies]
+dirs.workspace = true
 tempfile = "3"

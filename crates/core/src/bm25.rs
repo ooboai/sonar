@@ -73,7 +73,19 @@ impl BM25Index {
 
     /// Return the `top_k` highest-scoring (doc_index, score) pairs.
     pub fn search(&self, query: &[String], top_k: usize) -> Vec<(usize, f64)> {
+        self.search_masked(query, top_k, None)
+    }
+
+    /// Return the `top_k` highest-scoring (doc_index, score) pairs,
+    /// restricted to documents where `mask[i] == true` (if a mask is provided).
+    pub fn search_masked(
+        &self,
+        query: &[String],
+        top_k: usize,
+        mask: Option<&[bool]>,
+    ) -> Vec<(usize, f64)> {
         let mut scores: Vec<(usize, f64)> = (0..self.n_docs)
+            .filter(|&i| mask.is_none_or(|m| m.get(i).copied().unwrap_or(false)))
             .map(|i| (i, self.score(query, i)))
             .filter(|(_, s)| *s > 0.0)
             .collect();

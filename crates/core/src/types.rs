@@ -39,4 +39,9 @@ pub enum ContentType {
     Code,
     Docs,
     Config,
+    Data,
 }
+
+/// All content types that are indexable (excludes Data).
+pub const ALL_INDEXABLE: &[ContentType] =
+    &[ContentType::Code, ContentType::Docs, ContentType::Config];

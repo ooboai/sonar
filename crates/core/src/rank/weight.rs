@@ -50,8 +50,8 @@ mod tests {
 
     #[test]
     fn test_alpha_constants() {
-        assert!(ALPHA_SYMBOL < ALPHA_NL, "symbol queries should lean toward BM25");
-        assert!(ALPHA_NL <= 1.0);
-        assert!(ALPHA_SYMBOL >= 0.0);
+        const { assert!(ALPHA_SYMBOL < ALPHA_NL) };
+        const { assert!(ALPHA_NL <= 1.0) };
+        const { assert!(ALPHA_SYMBOL >= 0.0) };
     }
 }

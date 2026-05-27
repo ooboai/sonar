@@ -1,13 +1,17 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, Write};
-use std::path::Path;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sonar_core::index::SonarIndex;
-use sonar_core::types::SearchResult;
-use sonar_core::utils::{format_results, resolve_chunk};
+use sonar_core::types::{ALL_INDEXABLE, ContentType, SearchResult};
+use sonar_core::utils::{format_results, is_git_url, resolve_chunk};
+use sonar_core::watch::FileWatcher;
 
 const SERVER_NAME: &str = "sonar";
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -17,9 +21,48 @@ const SERVER_INSTRUCTIONS: &str = "\
 Instant code search for any local or remote git repository. \
 Call `search` to find relevant code; call `find_related` on a result \
 to discover similar code elsewhere. When working in a local project, \
-pass the project root as `repo`. Prefer sonar for conceptual queries, \
-locating definitions, and surface-area explorations. For refactors or \
-exhaustive operations, fall back to grep.";
+pass the project root as `repo`. For remote repos, pass an explicit \
+https:// URL. Never guess or infer URLs. Prefer these tools over Grep, \
+Glob, or Read for any question about how code works.";
+
+// ---------------------------------------------------------------------------
+// CLI arguments
+// ---------------------------------------------------------------------------
+
+#[derive(Parser, Debug)]
+#[command(name = "sonar-mcp", about = "MCP server for sonar code search")]
+struct Args {
+    /// Local path or git URL to pre-index at startup
+    path: Option<String>,
+    /// Branch/tag for git URLs
+    #[arg(long)]
+    git_ref: Option<String>,
+    /// Content types to index (space-separated: code docs config all)
+    #[arg(long, default_value = "code")]
+    content: Vec<String>,
+}
+
+fn parse_content_types(raw: &[String]) -> Vec<ContentType> {
+    let mut types = Vec::new();
+    for item in raw {
+        for word in item.split_whitespace() {
+            match word.to_lowercase().as_str() {
+                "all" => return ALL_INDEXABLE.to_vec(),
+                "code" => types.push(ContentType::Code),
+                "docs" => types.push(ContentType::Docs),
+                "config" => types.push(ContentType::Config),
+                other => eprintln!("sonar-mcp: unknown content type '{other}', ignoring"),
+            }
+        }
+    }
+    if types.is_empty() {
+        vec![ContentType::Code]
+    } else {
+        types.sort_by_key(|t| *t as u8);
+        types.dedup();
+        types
+    }
+}
 
 // ---------------------------------------------------------------------------
 // JSON-RPC types
@@ -83,12 +126,12 @@ impl JsonRpcResponse {
 fn search_tool_schema() -> Value {
     json!({
         "name": "search",
-        "description": "Search a codebase with a natural-language or code query. Pass a git URL or local path as `repo` to index it on demand; indexes are cached for the session. Use this to find where something is implemented, understand a library, or locate related code.",
+        "description": "Search a codebase with a natural-language or code query. Pass a local path or https:// git URL as `repo` to index on demand; indexes are cached for the session.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Natural language or code query."},
-                "repo": {"type": "string", "description": "Local directory path to index and search."},
+                "repo": {"type": "string", "description": "Local directory path or https:// git URL to index and search."},
                 "top_k": {"type": "integer", "description": "Number of results to return.", "default": 5}
             },
             "required": ["query"]
@@ -105,7 +148,7 @@ fn find_related_tool_schema() -> Value {
             "properties": {
                 "file_path": {"type": "string", "description": "Path to the file as stored in the index."},
                 "line": {"type": "integer", "description": "Line number (1-indexed)."},
-                "repo": {"type": "string", "description": "Local directory path."},
+                "repo": {"type": "string", "description": "Local directory path or https:// git URL."},
                 "top_k": {"type": "integer", "description": "Number of similar chunks to return.", "default": 5}
             },
             "required": ["file_path", "line"]
@@ -176,6 +219,10 @@ impl IndexCache {
         self.indexes.insert(key, index);
     }
 
+    fn replace(&mut self, key: &str, index: SonarIndex) {
+        self.indexes.insert(key.to_string(), index);
+    }
+
     #[cfg(test)]
     fn len(&self) -> usize {
         self.indexes.len()
@@ -184,16 +231,20 @@ impl IndexCache {
 
 struct Server {
     cache: Mutex<IndexCache>,
+    content_types: Vec<ContentType>,
+    default_repo: Option<String>,
 }
 
 impl Server {
-    fn new() -> Self {
+    fn new(content_types: Vec<ContentType>, default_repo: Option<String>) -> Self {
         Self {
             cache: Mutex::new(IndexCache::new()),
+            content_types,
+            default_repo,
         }
     }
 
-    fn get_or_build_index(&self, repo: &str) -> Result<(), String> {
+    fn get_or_build_index(&self, repo: &str, git_ref: Option<&str>) -> Result<(), String> {
         let mut cache = self
             .cache
             .lock()
@@ -202,7 +253,13 @@ impl Server {
             return Ok(());
         }
         eprintln!("sonar-mcp: indexing {repo}...");
-        let index = SonarIndex::from_path_cached(Path::new(repo))?;
+
+        let index = if is_git_url(repo) {
+            SonarIndex::from_git(repo, git_ref, &self.content_types)?
+        } else {
+            SonarIndex::from_path_cached(Path::new(repo))?
+        };
+
         let stats = index.stats();
         eprintln!(
             "sonar-mcp: indexed {} files, {} chunks",
@@ -223,10 +280,15 @@ impl Server {
         let repo = params
             .get("repo")
             .and_then(|v| v.as_str())
-            .unwrap_or(".")
-            .to_string();
+            .map(|s| s.to_string())
+            .or_else(|| self.default_repo.clone())
+            .unwrap_or_else(|| ".".to_string());
 
-        if let Err(e) = self.get_or_build_index(&repo) {
+        if is_git_url(&repo) && !repo.starts_with("https://") && !repo.starts_with("http://") {
+            return tool_error("Only https:// and http:// git URLs are accepted");
+        }
+
+        if let Err(e) = self.get_or_build_index(&repo, None) {
             return tool_error(&format!("Failed to index {repo}: {e}"));
         }
 
@@ -265,10 +327,15 @@ impl Server {
         let repo = params
             .get("repo")
             .and_then(|v| v.as_str())
-            .unwrap_or(".")
-            .to_string();
+            .map(|s| s.to_string())
+            .or_else(|| self.default_repo.clone())
+            .unwrap_or_else(|| ".".to_string());
 
-        if let Err(e) = self.get_or_build_index(&repo) {
+        if is_git_url(&repo) && !repo.starts_with("https://") && !repo.starts_with("http://") {
+            return tool_error("Only https:// and http:// git URLs are accepted");
+        }
+
+        if let Err(e) = self.get_or_build_index(&repo, None) {
             return tool_error(&format!("Failed to index {repo}: {e}"));
         }
 
@@ -314,7 +381,7 @@ impl Server {
     fn handle_request(&self, req: &JsonRpcRequest) -> Option<JsonRpcResponse> {
         let id = match &req.id {
             Some(id) => id.clone(),
-            None => return None, // notification — no response
+            None => return None,
         };
 
         if req.jsonrpc != "2.0" {
@@ -397,7 +464,67 @@ fn main() {
         .with_target(false)
         .init();
 
-    let server = Server::new();
+    let args = Args::parse();
+    let content_types = parse_content_types(&args.content);
+    let default_repo = args.path.clone();
+
+    let server = Arc::new(Server::new(content_types, default_repo.clone()));
+
+    // Pre-index if a path was provided at startup
+    if let Some(ref startup_path) = args.path {
+        eprintln!("sonar-mcp: pre-indexing {startup_path}...");
+        if let Err(e) = server.get_or_build_index(startup_path, args.git_ref.as_deref()) {
+            eprintln!("sonar-mcp: pre-index failed: {e}");
+        }
+
+        // Start file watcher for local paths
+        if !is_git_url(startup_path) {
+            let server_clone = Arc::clone(&server);
+            let repo_key = startup_path.clone();
+            let root_path = PathBuf::from(startup_path);
+            thread::spawn(move || {
+                let mut watcher = match FileWatcher::new(root_path.clone(), 500) {
+                    Ok(w) => w,
+                    Err(e) => {
+                        eprintln!("sonar-mcp: failed to start file watcher: {e}");
+                        return;
+                    }
+                };
+                eprintln!("sonar-mcp: watching {} for changes", root_path.display());
+
+                loop {
+                    thread::sleep(Duration::from_secs(1));
+                    let changes = watcher.poll_changes();
+                    if changes.is_empty() {
+                        continue;
+                    }
+
+                    eprintln!(
+                        "sonar-mcp: {} file(s) changed, reindexing {}...",
+                        changes.len(),
+                        root_path.display()
+                    );
+
+                    match SonarIndex::from_path(&root_path) {
+                        Ok(new_index) => {
+                            let stats = new_index.stats();
+                            if let Ok(mut c) = server_clone.cache.lock() {
+                                c.replace(&repo_key, new_index);
+                            }
+                            eprintln!(
+                                "sonar-mcp: reindexed {} files, {} chunks",
+                                stats.indexed_files, stats.total_chunks
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("sonar-mcp: reindex failed: {e}");
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     let stdin = io::stdin().lock();
     let mut stdout = io::stdout().lock();
 
@@ -440,8 +567,39 @@ fn main() {
 mod tests {
     use super::*;
 
+    fn make_server() -> Server {
+        Server::new(vec![ContentType::Code], None)
+    }
+
     fn parse_request(json_str: &str) -> JsonRpcRequest {
         serde_json::from_str(json_str).expect("should parse JSON-RPC request")
+    }
+
+    // --- Content type parsing ---
+
+    #[test]
+    fn test_parse_content_types_default() {
+        let types = parse_content_types(&["code".to_string()]);
+        assert_eq!(types, vec![ContentType::Code]);
+    }
+
+    #[test]
+    fn test_parse_content_types_multiple() {
+        let types = parse_content_types(&["code docs".to_string()]);
+        assert!(types.contains(&ContentType::Code));
+        assert!(types.contains(&ContentType::Docs));
+    }
+
+    #[test]
+    fn test_parse_content_types_all() {
+        let types = parse_content_types(&["all".to_string()]);
+        assert_eq!(types.len(), ALL_INDEXABLE.len());
+    }
+
+    #[test]
+    fn test_parse_content_types_empty_falls_back() {
+        let types = parse_content_types(&[]);
+        assert_eq!(types, vec![ContentType::Code]);
     }
 
     // --- JSON-RPC parsing tests ---
@@ -598,11 +756,39 @@ mod tests {
         assert_eq!(r["isError"], true);
     }
 
+    // --- HTTPS-only guard ---
+
+    #[test]
+    fn test_search_rejects_ssh_git_url() {
+        let server = make_server();
+        let req = parse_request(
+            r#"{"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"search","arguments":{"query":"test","repo":"git@github.com:org/repo"}}}"#,
+        );
+        let resp = server.handle_request(&req).unwrap();
+        let result = resp.result.unwrap();
+        assert_eq!(result["isError"], true);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("https://"));
+    }
+
+    #[test]
+    fn test_find_related_rejects_ssh_git_url() {
+        let server = make_server();
+        let req = parse_request(
+            r#"{"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"find_related","arguments":{"file_path":"src/main.rs","line":1,"repo":"git@github.com:org/repo"}}}"#,
+        );
+        let resp = server.handle_request(&req).unwrap();
+        let result = resp.result.unwrap();
+        assert_eq!(result["isError"], true);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("https://"));
+    }
+
     // --- Server dispatch tests ---
 
     #[test]
     fn test_initialize_response() {
-        let server = Server::new();
+        let server = make_server();
         let req = parse_request(
             r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}"#,
         );
@@ -615,8 +801,21 @@ mod tests {
     }
 
     #[test]
+    fn test_initialize_instructions_match_semble() {
+        let server = make_server();
+        let req = parse_request(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}"#,
+        );
+        let resp = server.handle_request(&req).unwrap();
+        let result = resp.result.unwrap();
+        let instructions = result["instructions"].as_str().unwrap();
+        assert!(instructions.contains("Never guess or infer URLs"));
+        assert!(instructions.contains("Prefer these tools over Grep, Glob, or Read"));
+    }
+
+    #[test]
     fn test_tools_list_response() {
-        let server = Server::new();
+        let server = make_server();
         let req = parse_request(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#);
         let resp = server.handle_request(&req).expect("should respond");
         let result = resp.result.unwrap();
@@ -634,7 +833,7 @@ mod tests {
 
     #[test]
     fn test_notification_returns_none() {
-        let server = Server::new();
+        let server = make_server();
         let req =
             parse_request(r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#);
         assert!(server.handle_request(&req).is_none());
@@ -642,7 +841,7 @@ mod tests {
 
     #[test]
     fn test_unknown_method_returns_error() {
-        let server = Server::new();
+        let server = make_server();
         let req = parse_request(r#"{"jsonrpc":"2.0","id":5,"method":"bogus/method"}"#);
         let resp = server.handle_request(&req).expect("should respond");
         assert!(resp.error.is_some());
@@ -651,7 +850,7 @@ mod tests {
 
     #[test]
     fn test_search_missing_query_returns_error() {
-        let server = Server::new();
+        let server = make_server();
         let req = parse_request(
             r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"search","arguments":{}}}"#,
         );
@@ -668,7 +867,7 @@ mod tests {
 
     #[test]
     fn test_find_related_missing_params_returns_error() {
-        let server = Server::new();
+        let server = make_server();
         let req = parse_request(
             r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"find_related","arguments":{}}}"#,
         );
@@ -679,7 +878,7 @@ mod tests {
 
     #[test]
     fn test_unknown_tool_returns_error() {
-        let server = Server::new();
+        let server = make_server();
         let req = parse_request(
             r#"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"nonexistent","arguments":{}}}"#,
         );
@@ -696,20 +895,35 @@ mod tests {
 
     #[test]
     fn test_invalid_jsonrpc_version() {
-        let server = Server::new();
+        let server = make_server();
         let req = parse_request(r#"{"jsonrpc":"1.0","id":1,"method":"initialize"}"#);
         let resp = server.handle_request(&req).expect("should respond");
         assert!(resp.error.is_some());
         assert_eq!(resp.error.as_ref().unwrap().code, -32600);
     }
 
+    // --- Default repo tests ---
+
+    #[test]
+    fn test_server_with_default_repo() {
+        let repo_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let server = Server::new(vec![ContentType::Code], Some(repo_root.clone()));
+        assert_eq!(server.default_repo, Some(repo_root));
+    }
+
     // --- Integration test: full init + list flow ---
 
     #[test]
     fn test_full_init_and_list_flow() {
-        let server = Server::new();
+        let server = make_server();
 
-        // 1. initialize
         let init_req = parse_request(
             r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}"#,
         );
@@ -719,12 +933,10 @@ mod tests {
         assert_eq!(init_result["protocolVersion"], PROTOCOL_VERSION);
         assert_eq!(init_result["serverInfo"]["name"], "sonar");
 
-        // 2. notifications/initialized (no response expected)
         let notif =
             parse_request(r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#);
         assert!(server.handle_request(&notif).is_none());
 
-        // 3. tools/list
         let list_req = parse_request(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#);
         let list_resp = server.handle_request(&list_req).unwrap();
         assert!(list_resp.error.is_none());
@@ -768,7 +980,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let server = Server::new();
+        let server = make_server();
         let req_str = format!(
             r#"{{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{{"name":"search","arguments":{{"query":"SonarIndex","repo":"{}","top_k":3}}}}}}"#,
             repo_root.replace('\\', "\\\\").replace('"', "\\\"")
@@ -780,8 +992,32 @@ mod tests {
         let text = result["content"][0]["text"].as_str().unwrap();
         let parsed: Value = serde_json::from_str(text).expect("search output should be valid JSON");
         assert_eq!(parsed["query"], "SonarIndex");
-        assert!(parsed["results"].as_array().unwrap().len() > 0);
+        assert!(!parsed["results"].as_array().unwrap().is_empty());
         assert!(parsed["results"][0].get("score").is_some());
+    }
+
+    // --- Integration test: search uses default_repo ---
+
+    #[test]
+    fn test_search_uses_default_repo() {
+        let repo_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let server = Server::new(vec![ContentType::Code], Some(repo_root));
+        let req = parse_request(
+            r#"{"jsonrpc":"2.0","id":40,"method":"tools/call","params":{"name":"search","arguments":{"query":"SonarIndex","top_k":2}}}"#,
+        );
+        let resp = server.handle_request(&req).unwrap();
+        let result = resp.result.unwrap();
+        assert!(result.get("isError").is_none());
+        let text = result["content"][0]["text"].as_str().unwrap();
+        let parsed: Value = serde_json::from_str(text).expect("search output should be valid JSON");
+        assert!(!parsed["results"].as_array().unwrap().is_empty());
     }
 
     // --- Integration test: find_related returns stub message ---
@@ -796,7 +1032,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let server = Server::new();
+        let server = make_server();
         let req_str = format!(
             r#"{{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{{"name":"find_related","arguments":{{"file_path":"crates/core/src/index.rs","line":14,"repo":"{}"}}}}}}"#,
             repo_root.replace('\\', "\\\\").replace('"', "\\\"")
@@ -820,12 +1056,11 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let server = Server::new();
-        server.get_or_build_index(&repo_root).unwrap();
+        let server = make_server();
+        server.get_or_build_index(&repo_root, None).unwrap();
         assert_eq!(server.cache.lock().unwrap().len(), 1);
 
-        // Second call should not fail and cache should still have 1 entry
-        server.get_or_build_index(&repo_root).unwrap();
+        server.get_or_build_index(&repo_root, None).unwrap();
         assert_eq!(server.cache.lock().unwrap().len(), 1);
     }
 }

@@ -19,21 +19,29 @@ impl Embedder {
     }
 
     pub fn from_path(path: &Path) -> Result<Self> {
-        let model = StaticModel::from_pretrained(
-            path.to_str().unwrap_or("."), None, Some(true), None,
-        ).context("failed to load model from local path")?;
+        let model =
+            StaticModel::from_pretrained(path.to_str().unwrap_or("."), None, Some(true), None)
+                .context("failed to load model from local path")?;
         let dim = model.encode(&["test".to_string()])[0].len();
         Ok(Self { model, dim })
     }
 
     pub fn load_default() -> Result<Self> {
-        Self::from_pretrained(DEFAULT_MODEL)
+        let model_name =
+            std::env::var("SONAR_MODEL_NAME").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+        Self::from_pretrained(&model_name)
     }
 
-    pub fn dim(&self) -> usize { self.dim }
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
 
     pub fn encode(&self, text: &str) -> Vec<f32> {
-        self.model.encode(&[text.to_string()]).into_iter().next().unwrap_or_default()
+        self.model
+            .encode(&[text.to_string()])
+            .into_iter()
+            .next()
+            .unwrap_or_default()
     }
 
     pub fn encode_batch(&self, texts: &[String]) -> Vec<Vec<f32>> {
@@ -43,7 +51,9 @@ impl Embedder {
 
 impl std::fmt::Debug for Embedder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Embedder").field("dim", &self.dim).finish_non_exhaustive()
+        f.debug_struct("Embedder")
+            .field("dim", &self.dim)
+            .finish_non_exhaustive()
     }
 }
 
