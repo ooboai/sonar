@@ -1,0 +1,18 @@
+[package]
+name = "sonar-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MCP server for sonar code search. Drop-in compatible with semble."
+
+[[bin]]
+name = "sonar-mcp"
+path = "src/main.rs"
+
+[dependencies]
+sonar-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
