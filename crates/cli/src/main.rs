@@ -144,8 +144,9 @@ fn main() -> anyhow::Result<()> {
             eprintln!("Indexing {}...", path.display());
             let index = sonar_core::persist::build_and_save_content(path, &content_types)
                 .map_err(|e| anyhow::anyhow!(e))?;
-            let cache_dir = sonar_core::persist::default_cache_dir(path)
-                .map_err(|e| anyhow::anyhow!(e))?;
+            let cache_dir =
+                sonar_core::persist::cache_dir_for_content(path, &content_types, None)
+                    .map_err(|e| anyhow::anyhow!(e))?;
             let stats = index.stats();
             eprintln!(
                 "Done. {} files, {} chunks, {} languages.",

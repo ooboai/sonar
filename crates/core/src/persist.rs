@@ -38,6 +38,24 @@ pub fn cache_key(path: &str) -> String {
     blake3::hash(path.as_bytes()).to_hex().to_string()
 }
 
+/// Cache key that includes content types.
+pub fn cache_key_with_content(path: &str, content_types: &[crate::types::ContentType]) -> String {
+    let mut input = path.to_string();
+    let mut types: Vec<&str> = content_types
+        .iter()
+        .map(|ct| match ct {
+            crate::types::ContentType::Code => "code",
+            crate::types::ContentType::Docs => "docs",
+            crate::types::ContentType::Config => "config",
+            crate::types::ContentType::Data => "data",
+        })
+        .collect();
+    types.sort();
+    input.push_str("::");
+    input.push_str(&types.join(","));
+    blake3::hash(input.as_bytes()).to_hex().to_string()
+}
+
 /// Resolve the OS-level cache directory for a given project root.
 ///
 /// Layout: `<os_cache>/sonar/<hash>/`
@@ -45,10 +63,19 @@ pub fn cache_key(path: &str) -> String {
 /// If `override_base` is `Some`, it is used instead of the OS cache directory
 /// (useful for tests).
 pub fn cache_dir_for(root: &Path, override_base: Option<&Path>) -> Result<PathBuf, String> {
+    cache_dir_for_content(root, &[crate::types::ContentType::Code], override_base)
+}
+
+/// Resolve cache directory incorporating content types into the key.
+pub fn cache_dir_for_content(
+    root: &Path,
+    content_types: &[crate::types::ContentType],
+    override_base: Option<&Path>,
+) -> Result<PathBuf, String> {
     let abs = root
         .canonicalize()
         .map_err(|e| format!("cannot resolve absolute path for {}: {e}", root.display()))?;
-    let key = cache_key(&abs.to_string_lossy());
+    let key = cache_key_with_content(&abs.to_string_lossy(), content_types);
 
     let base = match override_base {
         Some(b) => b.to_path_buf(),
@@ -360,6 +387,26 @@ pub fn load_cached(root: &Path) -> Result<Option<SonarIndex>, String> {
     load_cached_with(root, None)
 }
 
+/// Load cached index with content-aware cache key.
+pub fn load_cached_content(
+    root: &Path,
+    content_types: &[crate::types::ContentType],
+) -> Result<Option<SonarIndex>, String> {
+    let cache = cache_dir_for_content(root, content_types, None)?;
+
+    if !validate_cache(
+        &cache,
+        root,
+        DEFAULT_MODEL_PATH,
+        &default_content_types(),
+    ) {
+        return Ok(None);
+    }
+
+    let index = load_index(&index_path_in(&cache))?;
+    Ok(Some(index))
+}
+
 /// Like `load_cached` but accepts an override base directory for the cache
 /// (used by tests).
 pub fn load_cached_with(
@@ -470,7 +517,7 @@ pub fn build_and_save_content_with(
     };
 
     // Persist to OS cache
-    let cache = cache_dir_for(root, cache_base_override)?;
+    let cache = cache_dir_for_content(root, content_types, cache_base_override)?;
     save_index(&index, &index_path_in(&cache))?;
 
     // Collect file paths for metadata (same walker output used for staleness)

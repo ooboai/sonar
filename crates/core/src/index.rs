@@ -148,7 +148,7 @@ impl SonarIndex {
         path: &Path,
         content_types: &[ContentType],
     ) -> Result<Self, String> {
-        if let Some(index) = crate::persist::load_cached(path)? {
+        if let Some(index) = crate::persist::load_cached_content(path, content_types)? {
             return Ok(index);
         }
         crate::persist::build_and_save_content(path, content_types)
