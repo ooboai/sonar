@@ -22,6 +22,14 @@ sonar search "parse config" -p . --mode bm25       # keyword only (fastest)
 sonar search "parse config" -p . --mode semantic   # vector only
 ```
 
+Use `--content` to search beyond code files:
+
+```bash
+sonar search "deployment guide" -p . --content docs      # markdown, rst, etc.
+sonar search "database host port" -p . --content config  # yaml, toml, env, etc.
+sonar search "authentication" -p . --content all         # code + docs + config
+```
+
 Use `sonar find-related` to discover code similar to a known location (pass `file_path` and `line` from a prior search result):
 
 ```bash
