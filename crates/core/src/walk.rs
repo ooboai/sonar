@@ -409,6 +409,20 @@ fn build_walker(root: &Path) -> WalkBuilder {
     builder
 }
 
+/// Check if `.sonarignore` at `root` contains a `!*.ext` negation pattern for the given extension.
+fn has_sonarignore_inclusion(root: &Path, ext: &str) -> bool {
+    let ignore_path = root.join(".sonarignore");
+    let content = match std::fs::read_to_string(&ignore_path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let pattern = format!("!*.{ext}");
+    content.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed == pattern || trimmed == format!("!*.{}", ext.to_uppercase())
+    })
+}
+
 /// Walk a directory tree and return indexable files.
 ///
 /// Respects `.gitignore`, `.git/info/exclude`, global gitignore, and `.sonarignore`.
@@ -455,15 +469,18 @@ pub fn walk_directory(root: &Path, content_filter: &[ContentType]) -> Vec<Walked
             continue;
         }
 
-        // Content type filter
-        if !content_filter.contains(&content_type) {
+        // Content type filter — but force-included extensions bypass this
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let force_included = !ext.is_empty() && has_sonarignore_inclusion(root, ext);
+
+        if !force_included && !content_filter.contains(&content_type) {
             continue;
         }
 
         let language = detect_language(path);
 
-        // For Code files, skip if we can't detect a language
-        if content_type == ContentType::Code && language.is_none() {
+        // For Code files without a recognized language: skip unless force-included
+        if content_type == ContentType::Code && language.is_none() && !force_included {
             continue;
         }
 
@@ -1028,6 +1045,51 @@ mod tests {
         assert!(!paths.contains(&"data.csv"), "CSV should be excluded");
         assert!(!paths.contains(&"config.json"), "JSON should be excluded");
         assert!(paths.contains(&"main.rs"), "Rust files should be included");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ─── Force-include via !*.ext in .sonarignore ───────────────────────
+
+    #[test]
+    fn test_sonarignore_force_include() {
+        let dir = tmp_dir("force_include");
+
+        write_file(&dir, ".sonarignore", "!*.proto\n!*.cob\n");
+        write_file(
+            &dir,
+            "schema.proto",
+            "syntax = \"proto3\";\n\nmessage User {\n  string name = 1;\n  int32 age = 2;\n}\n",
+        );
+        write_file(
+            &dir,
+            "legacy.cob",
+            "       IDENTIFICATION DIVISION.\n       PROGRAM-ID. HELLO.\n       PROCEDURE DIVISION.\n           DISPLAY 'HELLO WORLD'.\n           STOP RUN.\n",
+        );
+        write_file(
+            &dir,
+            "main.rs",
+            "fn main() {\n    println!(\"hello\");\n}\n",
+        );
+        // .unknown file without a force-include should still be skipped
+        write_file(&dir, "data.xyz", "some unknown format content here\n");
+
+        let files = walk_directory(&dir, &[ContentType::Code]);
+        let paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
+
+        assert!(paths.contains(&"main.rs"), "Rust files included normally");
+        assert!(
+            paths.contains(&"schema.proto"),
+            "Proto files force-included via !*.proto"
+        );
+        assert!(
+            paths.contains(&"legacy.cob"),
+            "COBOL files force-included via !*.cob"
+        );
+        assert!(
+            !paths.contains(&"data.xyz"),
+            "Unknown extensions without !*.ext still skipped"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
