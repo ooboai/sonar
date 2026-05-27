@@ -1,4 +1,4 @@
-# sonar — Implementation Plan
+# sonar - Implementation Plan
 
 Rust translation of [semble](https://github.com/MinishLab/semble).
 Same algorithm, same constants, same MCP tool schemas.
@@ -7,30 +7,30 @@ Same algorithm, same constants, same MCP tool schemas.
 
 | semble (Python) | sonar (Rust) | Status |
 |---|---|---|
-| `types.py` — Chunk, SearchResult, IndexStats | `core/src/types.rs` | **Done** |
-| `tokens.py` — tokenize, split_identifier | `core/src/tokens.rs` | **Done** |
-| `ranking/weighting.py` — resolve_alpha | `core/src/rank/weight.rs` | **Done** |
-| `ranking/boosting.py` — symbol detection, boosts | `core/src/rank/boost.rs` | **Done** |
-| `ranking/penalties.py` — file path penalties, rerank | `core/src/rank/penalty.rs` | **Done** |
-| `search.py` — hybrid search, RRF | `core/src/search.rs` | **Done** |
-| `chunking/chunking.py` — chunk_source | `core/src/chunk.rs` | **Done** |
-| `chunking/core.py` — tree-sitter chunking | `core/src/chunk.rs` | **Done** |
-| `index/index.py` — SembleIndex | `core/src/index.rs` | **Done** (BM25 + Hybrid) |
-| `index/create.py` — create_index_from_path | `core/src/index.rs` | **Done** |
-| `index/dense.py` — vector index (vicinity) | `core/src/ann.rs` | **Done** |
-| `index/sparse.py` — BM25 wrapper | `core/src/bm25.rs` | **Done** |
-| `index/files.py` — extension lists | `core/src/walk.rs` | **Done** |
-| `index/file_walker.py` — file discovery | `core/src/walk.rs` | **Done** |
-| `stats.py` — token savings tracking | Not porting (semble-specific analytics) | Skip |
-| `utils.py` — format_results, resolve_chunk | `core/src/utils.rs` | **Done** |
-| `mcp.py` — MCP server | `mcp/src/main.rs` | **Done** |
-| `cli.py` — CLI | `cli/src/main.rs` | **Done** |
-| — (model loading) | `core/src/embed.rs` (model2vec-rs) | **Done** |
-| — (index persistence) | `core/src/persist.rs` | **Done** |
+| `types.py` - Chunk, SearchResult, IndexStats | `core/src/types.rs` | **Done** |
+| `tokens.py` - tokenize, split_identifier | `core/src/tokens.rs` | **Done** |
+| `ranking/weighting.py` - resolve_alpha | `core/src/rank/weight.rs` | **Done** |
+| `ranking/boosting.py` - symbol detection, boosts | `core/src/rank/boost.rs` | **Done** |
+| `ranking/penalties.py` - file path penalties, rerank | `core/src/rank/penalty.rs` | **Done** |
+| `search.py` - hybrid search, RRF | `core/src/search.rs` | **Done** |
+| `chunking/chunking.py` - chunk_source | `core/src/chunk.rs` | **Done** |
+| `chunking/core.py` - tree-sitter chunking | `core/src/chunk.rs` | **Done** |
+| `index/index.py` - SembleIndex | `core/src/index.rs` | **Done** (BM25 + Hybrid) |
+| `index/create.py` - create_index_from_path | `core/src/index.rs` | **Done** |
+| `index/dense.py` - vector index (vicinity) | `core/src/ann.rs` | **Done** |
+| `index/sparse.py` - BM25 wrapper | `core/src/bm25.rs` | **Done** |
+| `index/files.py` - extension lists | `core/src/walk.rs` | **Done** |
+| `index/file_walker.py` - file discovery | `core/src/walk.rs` | **Done** |
+| `stats.py` - token savings tracking | Not porting (semble-specific analytics) | Skip |
+| `utils.py` - format_results, resolve_chunk | `core/src/utils.rs` | **Done** |
+| `mcp.py` - MCP server | `mcp/src/main.rs` | **Done** |
+| `cli.py` - CLI | `cli/src/main.rs` | **Done** |
+| - (model loading) | `core/src/embed.rs` (model2vec-rs) | **Done** |
+| - (index persistence) | `core/src/persist.rs` | **Done** |
 
 ## Current State
 
-**Phases 1–3 are complete.** 108 tests passing, zero warnings.
+**Phases 1-3 are complete.** 108 tests passing, zero warnings.
 
 ### What's built
 - BM25 keyword search, semantic vector search, and hybrid RRF fusion
@@ -56,10 +56,10 @@ Same algorithm, same constants, same MCP tool schemas.
 
 ### Phase 2: Semantic search (add embeddings) ✅
 
-6. **Embeddings** (`embed.rs`) — thin wrapper around `model2vec-rs` crate ✅
-7. **ANN** (`ann.rs`) — brute-force cosine similarity with min-heap top-k ✅
-8. **Hybrid search** — BM25 + semantic via RRF, with mode selection ✅
-9. **CLI mode flag** — `--mode hybrid|semantic|bm25` ✅
+6. **Embeddings** (`embed.rs`) - thin wrapper around `model2vec-rs` crate ✅
+7. **ANN** (`ann.rs`) - brute-force cosine similarity with min-heap top-k ✅
+8. **Hybrid search** - BM25 + semantic via RRF, with mode selection ✅
+9. **CLI mode flag** - `--mode hybrid|semantic|bm25` ✅
 
 ### Phase 3: MCP server + persistence ✅
 
@@ -75,7 +75,7 @@ Same algorithm, same constants, same MCP tool schemas.
 
 ### Phase 3b: File watching (in progress)
 
-12. **File watcher** (`watch.rs`) — `notify` crate, debounced, incremental re-index
+12. **File watcher** (`watch.rs`) - `notify` crate, debounced, incremental re-index
 
 ### Phase 4: Integration with oobo (in progress)
 
@@ -114,4 +114,4 @@ Same algorithm, same constants, same MCP tool schemas.
 | File walking | pathlib, os.walk | walkdir + ignore crates |
 | Serialization | orjson | serde_json |
 | File watching | watchfiles | notify crate |
-| Hashing | — | blake3 |
+| Hashing | - | blake3 |

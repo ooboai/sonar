@@ -8,9 +8,9 @@ Sonar is a Rust translation of [semble](https://github.com/MinishLab/semble). Th
 
 The parity test runs identical queries through both `sonar` and `semble` on the same repository and compares:
 
-- **File overlap** — Jaccard similarity of file paths in the top-k results
-- **Rank correlation** — how closely the ranking order matches between the two engines
-- **Divergent queries** — any queries where overlap drops below 50%
+- **File overlap** - Jaccard similarity of file paths in the top-k results
+- **Rank correlation** - how closely the ranking order matches between the two engines
+- **Divergent queries** - any queries where overlap drops below 50%
 
 ### Running
 
@@ -36,9 +36,9 @@ python benchmarks/parity_test.py /path/to/repo --json  # machine-readable output
 
 Since sonar is a 1:1 port with the same constants, ranking pipeline, and chunking logic, differences should come from:
 
-- **BM25 tokenization** — minor differences in stemming/tokenization between Rust and Python implementations
-- **Embedding model** — sonar uses `model2vec-rs` while semble uses the Python `model2vec`; float precision may cause small ranking differences
-- **Tree-sitter versions** — different grammar versions may produce slightly different chunk boundaries
+- **BM25 tokenization** - minor differences in stemming/tokenization between Rust and Python implementations
+- **Embedding model** - sonar uses `model2vec-rs` while semble uses the Python `model2vec`; float precision may cause small ranking differences
+- **Tree-sitter versions** - different grammar versions may produce slightly different chunk boundaries
 
 Queries that target exact symbol names (e.g. `BM25Index`, `getUserById`) should have near-perfect overlap. Natural language queries (e.g. `how does search work`) may show more variation due to embedding precision.
 
@@ -48,9 +48,9 @@ Queries that target exact symbol names (e.g. `BM25Index`, `getUserById`) should 
 
 For each query, the token efficiency test compares:
 
-- **Snippet tokens** — tokens in sonar's returned code chunks
-- **File tokens** — tokens in the full source files those chunks came from
-- **Savings ratio** — `1 - (snippet_tokens / file_tokens)`
+- **Snippet tokens** - tokens in sonar's returned code chunks
+- **File tokens** - tokens in the full source files those chunks came from
+- **Savings ratio** - `1 - (snippet_tokens / file_tokens)`
 
 This quantifies how much context window an agent saves by using sonar search instead of reading entire files with `cat`/`grep`.
 
@@ -72,8 +72,8 @@ On typical codebases, sonar achieves roughly:
 
 | Metric | Expected Range |
 |---|---|
-| Savings ratio | 70–95% |
-| Compression ratio | 3–20x |
+| Savings ratio | 70-95% |
+| Compression ratio | 3-20x |
 
 The actual numbers depend on file sizes and how focused the query is. Symbol queries on large files yield the highest savings.
 

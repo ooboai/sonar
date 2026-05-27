@@ -2,16 +2,16 @@
 
 Fast hybrid code search for AI agents. Pure Rust port of [semble](https://github.com/MinishLab/semble).
 
-> **This is a Rust translation of semble** — same algorithm, same constants, same ranking pipeline. Full credit to [MinishLab](https://github.com/MinishLab) for designing the search and ranking system. We maintain this port because we need a single-binary, zero-dependency solution that AI agents can install in any sandbox without Python.
+> **This is a Rust translation of semble.** Same algorithm, same constants, same ranking pipeline. Full credit to [MinishLab](https://github.com/MinishLab) for designing the search and ranking system. We maintain this port because we need a single-binary, zero-dependency solution that AI agents can install in any sandbox without Python.
 
 ## Why this exists
 
-AI coding agents (Cursor, Claude Code, Codex, etc.) waste significant tokens re-reading codebases. They `grep` for a keyword, get 90+ file matches, then `cat` multiple files hunting for the right context. Sonar gives them the exact code chunks they need in one call — **5 ranked results instead of 90 files to read**.
+AI coding agents (Cursor, Claude Code, Codex, etc.) waste significant tokens re-reading codebases. They `grep` for a keyword, get 90+ file matches, then `cat` multiple files hunting for the right context. Sonar gives them the exact code chunks they need in one call: **5 ranked results instead of 90 files to read**.
 
 This project is:
 - **100% AI-built** with minor human steering
-- **A living mirror of semble** — when semble ships improvements, we port them
-- **Open for agents to maintain** — the intention is that LLM agents keep this in sync with upstream
+- **A living mirror of semble.** When semble ships improvements, we port them
+- **Open for agents to maintain.** The intention is that LLM agents keep this in sync with upstream
 
 ## Performance
 
@@ -25,16 +25,16 @@ This project is:
 
 ## Features
 
-- **Hybrid search** — BM25 keyword + Model2Vec semantic, fused with Reciprocal Rank Fusion
-- **Tree-sitter chunking** — Python, Rust, JavaScript, TypeScript, TSX, Go, Java + Markdown heading splits + line fallback
+- **Hybrid search.** BM25 keyword + Model2Vec semantic, fused with Reciprocal Rank Fusion
+- **Tree-sitter chunking.** Python, Rust, JavaScript, TypeScript, TSX, Go, Java + Markdown heading splits + line fallback
 - **290+ file extensions** recognized
-- **Pure Rust** — no Python, no ONNX runtime, no C dependencies. Single static binary.
-- **MCP server** — stdio JSON-RPC, same tool schemas as semble
-- **Index persistence** — OS cache dir with BLAKE3 staleness detection + per-file mtime tracking
-- **File watching** — automatic re-indexing on changes via `notify`
-- **`.gitignore` + `.sonarignore` support** — respects your ignore rules
-- **Git clone support** — index remote repos directly via HTTPS URL
-- **Graceful fallback** — if embedding model can't download, falls back to BM25-only
+- **Pure Rust.** No Python, no ONNX runtime, no C dependencies. Single static binary.
+- **MCP server.** Stdio JSON-RPC, same tool schemas as semble
+- **Index persistence.** OS cache dir with BLAKE3 staleness detection + per-file mtime tracking
+- **File watching.** Automatic re-indexing on changes via `notify`
+- **`.gitignore` + `.sonarignore` support.** Respects your ignore rules
+- **Git clone support.** Index remote repos directly via HTTPS URL
+- **Graceful fallback.** If embedding model can't download, falls back to BM25-only
 
 ## Install
 
@@ -88,8 +88,8 @@ sonar-mcp
 
 Exposes two tools over stdio JSON-RPC:
 
-- **`search`** — search a codebase with natural language or code queries
-- **`find_related`** — find semantically similar code to a given location
+- **`search`** - search a codebase with natural language or code queries
+- **`find_related`** - find semantically similar code to a given location
 
 Compatible with any MCP client (Cursor, Claude Desktop, etc.). Add to your MCP config:
 
@@ -136,11 +136,11 @@ sonar/
 
 ### How it works
 
-1. **Walk** — discover source files via `ignore` crate (respects `.gitignore` + `.sonarignore`), detect languages from 290+ extensions
-2. **Chunk** — split files into semantic units using tree-sitter (functions, classes, structs, methods) with merge + split for consistent sizes
-3. **Index** — build BM25 inverted index + Model2Vec embedding vectors (brute-force flat ANN)
-4. **Search** — score with both BM25 and cosine similarity, fuse with Reciprocal Rank Fusion
-5. **Rank** — apply symbol definition boosts, path penalties, file saturation decay, embedded-symbol boosts
+1. **Walk** - discover source files via `ignore` crate (respects `.gitignore` + `.sonarignore`), detect languages from 290+ extensions
+2. **Chunk** - split files into semantic units using tree-sitter (functions, classes, structs, methods) with merge + split for consistent sizes
+3. **Index** - build BM25 inverted index + Model2Vec embedding vectors (brute-force flat ANN)
+4. **Search** - score with both BM25 and cosine similarity, fuse with Reciprocal Rank Fusion
+5. **Rank** - apply symbol definition boosts, path penalties, file saturation decay, embedded-symbol boosts
 
 ### Embedding Model
 
@@ -159,7 +159,7 @@ This is a **Rust translation** of [semble](https://github.com/MinishLab/semble) 
 - Ranking pipeline (definition boost, path penalty, file saturation)
 - MCP tool schemas
 
-When semble updates their algorithm, we update ours. This is not a fork — it's a rewrite in a different language with the explicit goal of staying in sync.
+When semble updates their algorithm, we update ours. This is not a fork. It's a rewrite in a different language with the explicit goal of staying in sync.
 
 ### Why not just use semble directly?
 
@@ -169,7 +169,7 @@ When semble updates their algorithm, we update ours. This is not a fork — it's
 
 ## Contributing
 
-This project is primarily maintained by AI agents with human oversight. Contributions welcome — especially:
+This project is primarily maintained by AI agents with human oversight. Contributions welcome, especially:
 
 - Porting new semble features as they ship
 - Adding tree-sitter grammars for more languages
@@ -178,12 +178,12 @@ This project is primarily maintained by AI agents with human oversight. Contribu
 
 ## Credits
 
-- **[semble](https://github.com/MinishLab/semble)** by [MinishLab](https://github.com/MinishLab) — the original Python implementation that this project ports
-- **[Model2Vec](https://github.com/MinishLab/model2vec)** by MinishLab — the embedding model and Rust inference library
-- **[oobo](https://github.com/ooboai/oobo-cli)** — the AI code attribution tool that uses sonar for local code search
+- **[semble](https://github.com/MinishLab/semble)** by [MinishLab](https://github.com/MinishLab) - the original Python implementation that this project ports
+- **[Model2Vec](https://github.com/MinishLab/model2vec)** by MinishLab - the embedding model and Rust inference library
+- **[oobo](https://github.com/ooboai/oobo-cli)** - the AI code attribution tool that uses sonar for local code search
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 This project is a derivative work of [semble](https://github.com/MinishLab/semble) (also MIT licensed, Copyright (c) 2026 Thomas van Dongen). The algorithm, constants, and ranking logic are ported from semble with full attribution.
