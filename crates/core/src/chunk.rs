@@ -30,20 +30,48 @@ pub fn chunk_source(source: &str, file_path: &str, language: Option<&str>) -> Ve
 
     boundaries
         .into_iter()
-        .map(|b| {
-            let end_index = b.end.saturating_sub(1).max(b.start);
-            let text = &source[b.start..=end_index.min(source.len() - 1)];
-            let start_line = source[..b.start].matches('\n').count() + 1;
-            let end_line = source[..end_index].matches('\n').count() + 1;
-            Chunk {
+        .filter_map(|b| {
+            let start = floor_char_boundary(source, b.start);
+            let end = ceil_char_boundary(source, b.end.min(source.len()));
+            if start >= end {
+                return None;
+            }
+            let text = &source[start..end];
+            let start_line = source[..start].matches('\n').count() + 1;
+            let end_line = source[..end].matches('\n').count() + 1;
+            Some(Chunk {
                 content: text.to_string(),
                 file_path: file_path.to_string(),
                 start_line,
                 end_line,
                 language: language.map(String::from),
-            }
+            })
         })
         .collect()
+}
+
+/// Round down to the nearest char boundary at or before `index`.
+fn floor_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    let mut i = index;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Round up to the nearest char boundary at or after `index`.
+fn ceil_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    let mut i = index;
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
 }
 
 struct Boundary {
@@ -365,5 +393,24 @@ impl Config {
             let ts = get_ts_language(lang);
             assert!(ts.is_some(), "get_ts_language failed for {lang}");
         }
+    }
+
+    #[test]
+    fn test_chunk_multibyte_utf8_no_panic() {
+        let source = "use std::fs;\n\n/// Platform─specific box─drawing ├── and └── chars.\npub fn hello() {\n    println!(\"héllo wörld 日本語\");\n}\n\n// More code after unicode: αβγδ εζηθ\nfn other() {}\n";
+        let chunks = chunk_source(source, "utf8.rs", Some("rust"));
+        assert!(!chunks.is_empty());
+        for chunk in &chunks {
+            assert!(chunk.content.len() > 0);
+            assert!(chunk.content.is_char_boundary(0));
+        }
+    }
+
+    #[test]
+    fn test_chunk_box_drawing_chars() {
+        let source = "/// ┌───────────┐\n/// │  diagram  │\n/// └───────────┘\npub fn render() {\n    let s = \"├── child\";\n    println!(\"{}\", s);\n}\n";
+        let chunks = chunk_source(source, "draw.rs", Some("rust"));
+        assert!(!chunks.is_empty());
+        assert!(chunks[0].content.contains("diagram"));
     }
 }

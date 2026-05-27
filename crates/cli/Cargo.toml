@@ -17,3 +17,6 @@ anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 ctrlc.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
