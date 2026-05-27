@@ -2,7 +2,7 @@
 
 Fast hybrid code search for AI agents. Pure Rust port of [semble](https://github.com/MinishLab/semble).
 
-> **This project is a verbatim Rust translation of semble** — same algorithm, same constants, same ranking pipeline. Full credit to [MinishLab](https://github.com/MinishLab) for designing the search and ranking system. We maintain this port because we need a single-binary, zero-dependency solution that AI agents can install in any sandbox without Python.
+> **This is a Rust translation of semble** — same algorithm, same constants, same ranking pipeline. Full credit to [MinishLab](https://github.com/MinishLab) for designing the search and ranking system. We maintain this port because we need a single-binary, zero-dependency solution that AI agents can install in any sandbox without Python.
 
 ## Why this exists
 
@@ -150,7 +150,7 @@ Override the model with `SONAR_MODEL_NAME` env var.
 
 ## Relation to semble
 
-This is a **direct port** of [semble](https://github.com/MinishLab/semble) by [MinishLab](https://github.com/MinishLab) (MIT licensed). We intentionally match their:
+This is a **Rust translation** of [semble](https://github.com/MinishLab/semble) by [MinishLab](https://github.com/MinishLab) (MIT licensed). We intentionally match their:
 
 - Chunking strategy and constants (`DESIRED_CHUNK_LENGTH_CHARS = 1500`)
 - BM25 parameters (`k1 = 1.2`, `b = 0.75`)

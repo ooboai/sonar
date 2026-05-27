@@ -1,6 +1,6 @@
 # Benchmarking & Parity Testing
 
-Sonar is a verbatim Rust port of [semble](https://github.com/MinishLab/semble). These tools verify that sonar produces the same results and measure its token efficiency.
+Sonar is a Rust translation of [semble](https://github.com/MinishLab/semble). These tools verify that sonar produces the same results and measure its token efficiency.
 
 ## Parity Tests
 

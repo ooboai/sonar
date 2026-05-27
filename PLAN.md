@@ -1,6 +1,6 @@
 # sonar — Implementation Plan
 
-Verbatim Rust port of [semble](https://github.com/MinishLab/semble).
+Rust translation of [semble](https://github.com/MinishLab/semble).
 Same algorithm, same constants, same MCP tool schemas.
 
 ## Module Map: semble → sonar
