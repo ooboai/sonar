@@ -21,7 +21,7 @@ Same algorithm, same constants, same MCP tool schemas.
 | `index/sparse.py` - BM25 wrapper | `core/src/bm25.rs` | **Done** |
 | `index/files.py` - extension lists | `core/src/walk.rs` | **Done** |
 | `index/file_walker.py` - file discovery | `core/src/walk.rs` | **Done** |
-| `stats.py` - token savings tracking | Not porting (semble-specific analytics) | Skip |
+| `stats.py` - token savings tracking | `core/src/stats.rs` | **Done** |
 | `utils.py` - format_results, resolve_chunk | `core/src/utils.rs` | **Done** |
 | `mcp.py` - MCP server | `mcp/src/main.rs` | **Done** |
 | `cli.py` - CLI | `cli/src/main.rs` | **Done** |
