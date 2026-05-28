@@ -3,7 +3,10 @@ name = "sonar-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "CLI for sonar code search."
+repository.workspace = true
+description = "Fast hybrid code search CLI for agents. Rust translation of semble. BM25 + vector, tree-sitter chunking, zero setup."
+keywords = ["code-search", "agents", "cli", "embeddings", "bm25"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "sonar"

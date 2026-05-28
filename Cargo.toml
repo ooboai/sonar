@@ -10,7 +10,7 @@ repository = "https://github.com/ooboai/sonar"
 description = "Fast hybrid code search for agents. Pure Rust, drop-in MCP-compatible with semble."
 
 [workspace.dependencies]
-sonar-core = { path = "crates/core" }
+sonar-core = { path = "crates/core", version = "0.3.0" }
 sonar-mcp = { path = "crates/mcp" }
 
 # Chunking
