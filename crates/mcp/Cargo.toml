@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "MCP server for sonar code search. Drop-in compatible with semble. Works with Claude Code, Cursor, Codex, OpenCode."
-keywords = ["mcp", "code-search", "agents", "model-context-protocol", "embeddings"]
+keywords = ["mcp", "code-search", "agents", "mcp-server", "embeddings"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
