@@ -3,7 +3,10 @@ name = "sonar-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Core hybrid search engine: chunking, BM25, embeddings, RRF."
+repository.workspace = true
+description = "Fast hybrid code search engine for agents: tree-sitter chunking, BM25, static embeddings, RRF. Rust translation of semble."
+keywords = ["code-search", "embeddings", "agents", "mcp", "bm25"]
+categories = ["development-tools", "text-processing"]
 
 [dependencies]
 tree-sitter.workspace = true
